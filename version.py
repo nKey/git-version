@@ -33,29 +33,54 @@ def _save_versions(versions, version_file=version_file):
     open(version_file, 'w').write('\n'.join(output) + '\n')
 
 
-def default_rule(version, build=None):
+def _major_minor_patch(version):
     major, _, minor = version.partition('.')
     minor, _, patch = minor.partition('.')
+    return major, minor, patch
+
+
+def major_rule(version, *a, **kw):
+    """Increments major number, resetting minor and patch numbers."""
+    major, minor, patch = _major_minor_patch(version)
+    major = str(int(major) + 1)
+    minor = patch = '0'
+    return str.join('.', (major, minor, patch))
+
+
+def minor_rule(version, *a, **kw):
+    """Increments minor number, keeping major and resetting patch number."""
+    major, minor, patch = _major_minor_patch(version)
+    minor = str(int(minor) + 1)
+    patch = '0'
+    return str.join('.', (major, minor, patch))
+
+
+def build_rule(version, build=None, *a, **kw):
+    """Set patch number to `build` argument, keeping major and minor number."""
+    major, minor, patch = _major_minor_patch(version)
     if not build:
         build = str(int(patch or 0) + 1)
     return str.join('.', (major, minor, build))
 
 
 rules = {
-    'master': default_rule,
-    'develop': default_rule,
-    'appstore': default_rule,
+    'master': minor_rule,
+    'develop': build_rule,
+    'appstore': major_rule,
 }
 
 if __name__ == '__main__':
     import sys
+    if len(sys.argv) != 3:
+        sys.exit('Usage: %s [branch_name] [build_number]' % sys.argv[0])
     branch_name = sys.argv[1]
     build_number = sys.argv[2]
     if not branch_name in rules:
         sys.exit('No versioning rules found for branch %s' % branch_name)
     versions = _parse_versions()
     current_version = versions.get(branch_name, initial_version)
-    next_version = rules[branch_name](current_version, build_number)
+    next_version = rules[branch_name](current_version, build_number, versions)
     versions[branch_name] = next_version
     _save_versions(versions)
-    print current_version, next_version
+    print 'CURRENT_VERSION=%s' % current_version
+    print 'NEXT_VERSION=%s' % next_version
