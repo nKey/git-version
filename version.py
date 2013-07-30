@@ -98,7 +98,13 @@ def _parse_args(args):
         if action == 'release':
             print release(*option)
         elif action == 'release-set':
-            print release_set(*option)
+            try:
+                if _is_version(option[0]):
+                    print release_set(*option)
+                else:
+                    errors = 'fatal: Not a valid version'
+            except IndexError:
+                errors = 'fatal: Must specify a version'
         elif action == 'bump':
             print next_version(*option)
         elif action == 'info':
@@ -158,6 +164,10 @@ def _is_version(version):
         return False
     major, minor, patch = _major_minor_patch(version)
     if not major or not minor:
+        return False
+    try:
+        map(int, (major, minor, patch or 0))
+    except ValueError:
         return False
     return True
 
