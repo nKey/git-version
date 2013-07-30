@@ -26,7 +26,7 @@ def release(rule=None, *args):
     Perform a new release calculating the version number using a rule.
     """
     version = next_version(rule or default_rule, *args)
-    release_set(version)
+    return release_set(version)
 
 
 def release_set(version, prefix='release/', *args):
@@ -39,6 +39,7 @@ def release_set(version, prefix='release/', *args):
     git.merge('--ff-only', 'master', 'origin/master')
     release_start(version, prefix)
     release_finish(version, prefix)
+    return version
 
 
 def release_start(version, prefix):
