@@ -33,17 +33,21 @@ def release_set(version, prefix='release/', *args):
     """
     Perform a new release tagging with the given version.
     """
+    git = Git(check_output=False)
+    git.fetch('origin', 'master', 'develop')
+    git.merge('--ff-only', 'develop', 'origin/develop')
+    git.merge('--ff-only', 'master', 'origin/master')
     release_start(version, prefix)
     release_finish(version, prefix)
 
 
 def release_start(version, prefix):
     """
-    Start a new release branch.
+    Start a new release branch from develop branch.
     """
     git = Git(check_output=False)
     release_branch = prefix + version
-    git.fetch('origin', 'master', 'develop')
+    git.checkout('develop')
     git.checkout('-b', release_branch)
 
 
@@ -51,10 +55,10 @@ def release_finish(version, prefix):
     """
     Finish the release from an existing release branch.
 
-    Steps:
-        1. merge release branch to master
-        2. tag merge with new version
-        3. merge tag back to develop
+    Overview:
+        1. release branch -> master
+        2. tag master
+        3. tag -> develop
         4. push changes to origin
 
     """
@@ -62,6 +66,7 @@ def release_finish(version, prefix):
     release_branch = prefix + version
     git.checkout('master')
     git.merge('--no-ff', release_branch)
+    git.branch('-d', release_branch)
     git.tag('-a', version, '-m', '"Release %s"' % version)
     git.checkout('develop')
     git.merge('--no-ff', version)
@@ -141,8 +146,9 @@ git = Git()
 # Versioning rules
 
 def _major_minor_patch(version):
+    version, _, vcs = version.partition('-')
     major, _, minor = version.partition('.')
-    minor, _, patch = minor.partition('.' if '.' in minor else '-')
+    minor, _, patch = minor.partition('.')
     return major, minor, patch
 
 
@@ -177,7 +183,7 @@ def patch_rule(version, *a, **kw):
     """Increments patch number, keeping major and minor numbers."""
     major, minor, patch = _major_minor_patch(version)
     try:
-        patch = str(int(patch or 0) + 1)
+        patch = str(int(patch) + 1) if patch else '0'
     except ValueError:
         patch = '0'
     return str.join('.', (major, minor, patch))
@@ -185,65 +191,20 @@ def patch_rule(version, *a, **kw):
 
 def build_rule(version, build=None, *a, **kw):
     """Set patch number to `build` argument, keeping major and minor number."""
-    major, minor, patch = _major_minor_patch(version)
     if not build:
-        try:
-            build = str(int(patch or 0) + 1)
-        except ValueError:
-            build = '0'
+        return patch_rule(version)
+    major, minor, patch = _major_minor_patch(version)
     return str.join('.', (major, minor, build))
 
 
-# Branch named rules
-
-def master_rule(version, *a, **kw):
-    """
-    Increments the patch version.
-
-    Used by the build machine when building the master branch. It will base the
-    version on the previous git tag, so to increment the minor or major version
-    there must be a tag on the branch that merged to the master before building.
-
-    """
-    return patch_rule(version)
-
-
-def develop_rule(version, *a, **kw):
-    """
-    Increments the minor version, stripping the patch number.
-
-    Used by the developer before releasing a new minor version. It will base
-    the version on the previous git tag and not set the patch number so that
-    the next build on master assumes patch number zero.
-
-    """
-    major, minor, patch = _major_minor_patch(version)
-    minor = str(int(minor) + 1)
-    return str.join('.', (major, minor))
-
-
-def appstore_rule(version, *a, **kw):
-    """
-    Does not increment, just uses last tag version.
-
-    Used by the build machine when building the AppStore release from latest
-    master branch or from a hotfix branch.
-
-    """
-    return version
-
-
 rules = {
-    'master': master_rule,
-    'develop': develop_rule,
-    'appstore': appstore_rule,
     'major': major_rule,
     'minor': minor_rule,
     'patch': patch_rule,
     'build': build_rule,
 }
 
-default_rule = 'master'
+default_rule = 'patch'
 
 
 if __name__ == '__main__':
