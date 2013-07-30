@@ -1,43 +1,80 @@
 #!/usr/bin/env python
-#
-# Increments version number for current branch
-#
-# Parses the version file and updates it with the incremented version number.
-# Also prints the current and new version numbers to stdout.
 
-initial_version = '1.0.0'
-version_file = 'version'
+"""Show or increment version number for current branch based on git tags."""
+
+import subprocess
 
 
-def _split_versions(line):
-    branch, _, version = map(str.strip, line.partition(':'))
-    return branch, version
+_usage = """usage: {command} [action [options]]
+
+{description}
+
+ bump [rule] \t Calculate next version using a rule (default: branch name)
+ set <string> \t Set version to specified value and create new tag
+"""
 
 
-def _parse_versions(version_file=version_file):
-    versions = {}
-    for line in open(version_file):
-        branch, version = _split_versions(line)
-        if branch:
-            versions[branch] = version
-    return versions
+def current_version():
+    return git.describe()
 
 
-def _save_versions(versions, version_file=version_file):
-    branches = filter(None, (_split_versions(l)[0] for l in open(version_file)))
-    output = []
-    for branch in branches:
-        version = versions.pop(branch)
-        output.append('%s: %s' % (branch, version))
-    output += ['%s: %s' % (k, v) for k, v in versions.iteritems()]
-    open(version_file, 'w').write('\n'.join(output) + '\n')
+def next_version(rule=None, *args):
+    version = git.describe()
+    if rule not in rules:
+        # use current branch name to match rule
+        rule = git.rev_parse('--abbrev-ref', 'HEAD')
+    return rules[rule](version, *args)
+
+
+def set_version(version, *args):
+    git.tag('-a', version, '-m', '"Release %s"' % version)
+
+
+def _parse_args(args):
+    args = args[:]
+    command = args.pop(0)
+    action = args.pop(0) if args else None
+    option = args
+    errors = None
+    try:
+        if not action:
+            print current_version()
+        elif action == 'bump':
+            print next_version(*option)
+        elif action == 'set':
+            print set_version(*option)
+        else:
+            print _usage.format(command=command, description=__doc__)
+    except subprocess.CalledProcessError as call_error:
+        errors = call_error.output.strip()
+    return errors
+
+
+class Git(object):
+
+    def __init__(self, baked_args=None):
+        self.args = ['git']
+        self.baked_args = baked_args or {}
+
+    def __getattr__(self, name):
+        git = Git()
+        git.args += [name.replace('_', '-')]
+        return git
+
+    def __call__(self, *args):
+        return subprocess.check_output(self.args + list(args),
+            stderr=subprocess.STDOUT, **self.baked_args).strip()
+
+git = Git()
 
 
 def _major_minor_patch(version):
     major, _, minor = version.partition('.')
-    minor, _, patch = minor.partition('.')
+    minor, _, patch = minor.partition('.' if '.' in minor else '-')
     return major, minor, patch
 
+
+# Default rules
 
 def major_rule(version, *a, **kw):
     """Increments major number, resetting minor and patch numbers."""
@@ -63,24 +100,61 @@ def build_rule(version, build=None, *a, **kw):
     return str.join('.', (major, minor, build))
 
 
+# Zamurai rules
+
+def master_rule(version, *a, **kw):
+    """
+    Increments the patch version.
+
+    Used by the build machine when building the master branch. It will base the
+    version on the previous git tag, so to increment the minor or major version
+    there must be a tag on the branch that merged to the master before building.
+
+    """
+    major, minor, patch = _major_minor_patch(version)
+    try:
+        patch = str(int(patch or 0) + 1)
+    except ValueError:
+        patch = '0'
+    return str.join('.', (major, minor, patch))
+
+
+def develop_rule(version, *a, **kw):
+    """
+    Increments the minor version.
+
+    Used by the developer before releasing a new minor version. It will base
+    the version on the previous git tag and not set the patch number so that
+    the next build on master assumes patch number zero.
+
+    """
+    major, minor, patch = _major_minor_patch(version)
+    minor = str(int(minor) + 1)
+    return str.join('.', (major, minor))
+
+
+def appstore_rule(version, *a, **kw):
+    """
+    Does not increment, just uses last tag version.
+
+    Used by the build machine when building the AppStore release from latest
+    master branch or from a hotfix branch.
+
+    """
+    return version
+
+
 rules = {
-    'master': minor_rule,
-    'develop': build_rule,
-    'appstore': major_rule,
+    'master': master_rule,
+    'develop': develop_rule,
+    'appstore': appstore_rule,
+    'major': major_rule,
+    'minor': minor_rule,
+    'build': build_rule,
 }
+
 
 if __name__ == '__main__':
     import sys
-    if len(sys.argv) != 3:
-        sys.exit('Usage: %s [branch_name] [build_number]' % sys.argv[0])
-    branch_name = sys.argv[1]
-    build_number = sys.argv[2]
-    if not branch_name in rules:
-        sys.exit('No versioning rules found for branch %s' % branch_name)
-    versions = _parse_versions()
-    current_version = versions.get(branch_name, initial_version)
-    next_version = rules[branch_name](current_version, build_number, versions)
-    versions[branch_name] = next_version
-    _save_versions(versions)
-    print 'CURRENT_VERSION=%s' % current_version
-    print 'NEXT_VERSION=%s' % next_version
+    errors = _parse_args(sys.argv)
+    sys.exit(errors)
