@@ -1,47 +1,34 @@
 # Version Control
 
-Increments version number for current branch being built.
-
-
-## Dependencies
-
-* [Git Plugin](https://wiki.jenkins-ci.org/display/JENKINS/Git+Plugin)
-* [EnvInject Plugin](https://wiki.jenkins-ci.org/display/JENKINS/EnvInject+Plugin)
-
-
-## Jenkins Configuration
-
-### Build steps:
-
-* Execute shell: `python ${WORKSPACE}/version.py ${GIT_BRANCH} ${BUILD_NUMBER} > envvars`
-* Inject environment variables - Properties File Path: `envvars`
-
-The following variables will then be available to use in your build environment:
-
-* `CURRENT_VERSION`: the number read from the version file for the branch being built.
-* `NEXT_VERSION`: the calculated next version number, that is also updated on the version file.
+Increments version number based on git tags.
 
 
 ## Git Project Setup
 
-* Copy the `version.py` file to your project and create version increment rules for each branch.
-* Create a file named `version` inside your project in git, containing the initial version numbers you want for each branch.
+* Copy the `version.py` file to your project root.
+* Run `python version.py` and read the command line usage help.
+* Hack your code, commiting on the develop branch as normal.
+* When ready, run `python version.py release` to create a new release from the develop to the master branch, pushing the changes to origin.
 
 
-## Example
+## Jenkins Configuration
 
-Increment rules:
+### Dependencies
 
-    rules = {
-        'master': major_rule,
-        'develop': build_rule,
-    }
+* [Git Plugin](https://wiki.jenkins-ci.org/display/JENKINS/Git+Plugin)
+* [EnvInject Plugin](https://wiki.jenkins-ci.org/display/JENKINS/EnvInject+Plugin)
 
-Initial versions:
+### Source code management:
 
-    master: 1.0.0
-    develop: 1.0.86
+Configure your git repository URL and branch to build, then click advanced and set:
 
-In this example, for the next build of the master branch Jenkins will tag it as `1.0.0`, increment it to `2.0.0` (according to `major_rule`), and push the new tag and modified version file to the remote origin.
+* Skip internal tag: true
 
-And for the next build of the develop branch, Jenkins will just increment it by the build number given as parameter on the script call, and push the modified version file to the remote origin.
+Otherwise you'll get the wrong version number.
+
+### Build steps:
+
+* Execute shell: <br />`echo CURRENT_VERSION=$(python "${WORKSPACE}/version.py" show) > envvars`
+* Inject environment variables - Properties File Path: `envvars`
+
+The `CURRENT_VERSION` variable will then be available to use in your build environment, containing the version obtained from the most recent git tag.
