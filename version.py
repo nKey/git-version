@@ -17,7 +17,7 @@ Safe commands:
     bump [<rule>]         calculate next version using a rule (default: {default_rule})
     info <rule>           show rule description
     rules                 display list of rules
-    show                  display current version
+    show [<rule>]         display current version (default: all)
 """
 
 
@@ -74,8 +74,17 @@ def release_finish(version, prefix):
     git.push('origin', 'master', 'develop', version)
 
 
-def current_version():
-    return git.describe()
+def current_version(rule=None):
+    version = git.describe()
+    if rule not in ('major', 'minor', 'patch'):
+        return version
+    major, minor, patch = _major_minor_patch(version)
+    if rule == 'patch':
+        return str.join('.', (major, minor, patch))
+    elif rule == 'minor':
+        return str.join('.', (major, minor))
+    elif rule == 'major':
+        return major
 
 
 def current_branch():
@@ -120,7 +129,7 @@ def _parse_args(args):
                 key=lambda v: v.startswith('*') or v)
             )
         elif action == 'show':
-            print current_version()
+            print current_version(*option)
         else:
             print _usage.format(command=command, description=__doc__,
                 default_rule=default_rule)
