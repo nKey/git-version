@@ -77,9 +77,10 @@ def release_finish(version, branch, source, origin, prefix):
     git.checkout(branch)
     git.merge('--no-ff', release_branch)
     git.branch('-d', release_branch)
-    git.tag('-a', version, '-m', '"Release %s"' % version)
-    git.checkout(source)
-    git.merge('--no-ff', version)
+    if version != current_version('patch'):
+        git.tag('-a', version, '-m', '"Release %s"' % version)
+        git.checkout(source)
+        git.merge('--no-ff', version)
     git.push(origin, branch, source, version)
 
 
@@ -233,10 +234,11 @@ def build_rule(version, build=None, *a, **kw):
 
 def keep_rule(version, *a, **kw):
     """
-    Keep the same version, without changing.
+    Keep the same version without changes.
     Use of this rule prevents a backmerge from occurring.
     """
-    return version
+    major, minor, patch = _major_minor_patch(version)
+    return str.join('.', (major, minor, patch))
 
 
 bump_rules = {
