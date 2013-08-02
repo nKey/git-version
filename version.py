@@ -5,54 +5,63 @@
 import subprocess
 
 
-_usage = """usage: {command} [action [options]]
+_usage = """{description}
 
-{description}
+Usage:
+    {command} release [-r <rule>] [-o <origin>] [<destination> [<source>]]
+    {command} release-set <version> [-o <origin>] [<destination> [<source>]]
 
-Actions:
-    release [<rule>]      create new release with version calculated using a rule (default: {default_rule})
-    release-set <version> create new release with version passed as parameter
+    {command} hotfix [-r <rule>] [-o <origin>] [<destination> [<source>]]
+    {command} hotfix-set <version> [-o <origin>] [<destination> [<source>]]
 
 Safe commands:
-    bump [<rule>]         calculate next version using a rule (default: {default_rule})
-    info <rule>           show rule description
-    rules                 display list of rules
-    show [<rule>]         display current version (default: all)
+    {command} bump [<rule>]         calculate next version using a rule (default: {default_rule})
+    {command} info <rule>           show rule description
+    {command} rules                 display list of rules
+    {command} show [<rule>]         display current version (default: all)
 """
 
 
-def release(rule=None, *args):
+def release(branch=None, source=None, origin=None, rule=None, *args, **kwargs):
     """
     Perform a new release calculating the version number using a rule.
     """
-    version = next_version(rule or default_rule, *args)
-    return release_set(version)
+    origin = origin or default_origin
+    branch = branch or default_branch
+    source = source or branch_rules[branch]['source']
+    rule = rule or branch_rules[branch]['rule']
+    version = next_version(rule, *args)
+    return release_set(version, branch, source)
 
 
-def release_set(version, prefix='release/', *args):
+def release_set(version, branch=None, source=None, origin=None,
+        prefix='release/', *args, **kwargs):
     """
     Perform a new release tagging with the given version.
     """
+    origin = origin or default_origin
+    branch = branch or default_branch
+    source = source or branch_rules[branch]['source']
     git = Git(check_output=False)
-    git.fetch('origin', 'master', 'develop')
-    git.merge('--ff-only', 'develop', 'origin/develop')
-    git.merge('--ff-only', 'master', 'origin/master')
-    release_start(version, prefix)
-    release_finish(version, prefix)
+    git.fetch(origin, branch, source)
+    git.merge('--ff-only', source, '%s/%s' % (origin, source))
+    git.merge('--ff-only', branch, '%s/%s' % (origin, branch))
+    release_start(version, branch, source, origin, prefix)
+    release_finish(version, branch, source, origin, prefix)
     return version
 
 
-def release_start(version, prefix):
+def release_start(version, branch, source, origin, prefix):
     """
     Start a new release branch from develop branch.
     """
     git = Git(check_output=False)
     release_branch = prefix + version
-    git.checkout('develop')
+    git.checkout(source)
     git.checkout('-b', release_branch)
 
 
-def release_finish(version, prefix):
+def release_finish(version, branch, source, origin, prefix):
     """
     Finish the release from an existing release branch.
 
@@ -65,13 +74,13 @@ def release_finish(version, prefix):
     """
     git = Git(check_output=False)
     release_branch = prefix + version
-    git.checkout('master')
+    git.checkout(branch)
     git.merge('--no-ff', release_branch)
     git.branch('-d', release_branch)
     git.tag('-a', version, '-m', '"Release %s"' % version)
-    git.checkout('develop')
+    git.checkout(source)
     git.merge('--no-ff', version)
-    git.push('origin', 'master', 'develop', version)
+    git.push(origin, branch, source, version)
 
 
 def current_version(rule=None):
@@ -94,18 +103,22 @@ def current_branch():
 def next_version(rule=None, *args):
     version = current_version()
     rule = rule or default_rule
-    return rules[rule](version, *args)
+    return bump_rules[rule](version, *args)
 
 
 def _parse_args(args):
     args = args[:]
     command = args.pop(0)
     action = args.pop(0) if args else None
-    option = args
+    kw_idx = [(i, i + 1) for i, k in enumerate(args) if k.startswith('-')]
+    kwargs = {args[i]: args[j] for i, j in kw_idx}
+    option = [args[i] for i in range(len(args)) if i not in sum(kw_idx, ())]
     errors = None
+    kwargs['rule'] = kwargs.get('-r')
+    kwargs['origin'] = kwargs.get('-o')
     try:
         if action == 'release':
-            print release(*option)
+            print release(*option, **kwargs)
         elif action == 'release-set':
             try:
                 if _is_version(option[0]):
@@ -118,7 +131,7 @@ def _parse_args(args):
             print next_version(*option)
         elif action == 'info':
             try:
-                print rules[option[0]].__doc__.strip()
+                print bump_rules[option[0]].__doc__.strip()
             except KeyError:
                 errors = 'fatal: Rule is not defined'
             except IndexError:
@@ -132,6 +145,7 @@ def _parse_args(args):
             print current_version(*option)
         else:
             print _usage.format(command=command, description=__doc__,
+                default_origin=default_origin, default_branch=default_branch,
                 default_rule=default_rule)
     except subprocess.CalledProcessError as call_error:
         errors = call_error.output.strip()
@@ -217,14 +231,30 @@ def build_rule(version, build=None, *a, **kw):
     return str.join('.', (major, minor, build))
 
 
-rules = {
+def keep_rule(version, *a, **kw):
+    """
+    Keep the same version, without changing.
+    Use of this rule prevents a backmerge from occurring.
+    """
+    return version
+
+
+bump_rules = {
     'major': major_rule,
     'minor': minor_rule,
     'patch': patch_rule,
     'build': build_rule,
+    'keep': keep_rule,
 }
 
-default_rule = 'patch'
+branch_rules = {
+    'master': {'rule': 'patch', 'source': 'develop'},
+    'appstore': {'rule': 'keep', 'source': 'master'},
+}
+
+default_origin = 'origin'
+default_branch = 'master'
+default_rule = branch_rules[default_branch]['rule']
 
 
 if __name__ == '__main__':
