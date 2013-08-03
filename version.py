@@ -24,7 +24,7 @@ _man = """
     {command} - {description}
 
 {bold}SYNOPSIS{reset}
-    {usage}
+{usage}
 
 {bold}DESCRIPTION{reset}
     Use {command} release when you want to create a new versioned release from
@@ -33,8 +33,18 @@ _man = """
 
     A rule specifies a function used to change the version number in a certain
     way. The version format is "<major>.<minor>.<patch>" and a rule can operate
-    on one or more of the version fields (for example resetting the patch and
-    minor numbers when increasing the major number).
+    on one or more of the version fields - for example resetting the patch and
+    minor numbers when increasing the major number.
+
+    Some combinations of rules and source branches are defined for specific
+    destination branches:
+
+{branch_rules}
+
+    This means you can simply specify the destination branch on the commandline
+    (eg. {command} {under}release {default_branch}{reset}) and the options will assume the default
+    values accordingly (same as {command} {under}release -r {default_rule} {default_branch} {default_source}{reset}).
+
 
 {bold}OPTIONS{reset}
 
@@ -71,10 +81,10 @@ def release_set(version, branch=None, source=None, origin=None,
     origin = origin or default_origin
     branch = branch or default_branch
     source = source or branch_rules[branch]['source']
-    git = Git(check_output=False, **kwargs)
+    git = Git(**kwargs)
     git.fetch(origin, branch, source)
-    git.merge('--ff-only', source, '%s/%s' % (origin, source))
-    git.merge('--ff-only', branch, '%s/%s' % (origin, branch))
+    git.merge('--ff-only', '--no-edit', source, '%s/%s' % (origin, source))
+    git.merge('--ff-only', '--no-edit', branch, '%s/%s' % (origin, branch))
     release_start(version, branch, source, origin, prefix, **kwargs)
     release_finish(version, branch, source, origin, prefix, **kwargs)
     if not dry_run:
@@ -86,7 +96,7 @@ def release_start(version, branch, source, origin, prefix, **kwargs):
     """
     Start a new release branch from develop branch.
     """
-    git = Git(check_output=False, **kwargs)
+    git = Git(**kwargs)
     release_branch = prefix + version
     git.checkout(source)
     git.checkout('-b', release_branch)
@@ -102,15 +112,15 @@ def release_finish(version, branch, source, origin, prefix, **kwargs):
         3. tag -> develop
 
     """
-    git = Git(check_output=False, **kwargs)
+    git = Git(**kwargs)
     release_branch = prefix + version
     git.checkout(branch)
-    git.merge('--no-ff', release_branch)
+    git.merge('--no-ff', '--no-edit', release_branch)
     git.branch('-d', release_branch)
     if version != current_version('patch'):
         git.tag('-a', version, '-m', '"Release %s"' % version)
         git.checkout(source)
-        git.merge('--no-ff', version)
+        git.merge('--no-ff', '--no-edit', version)
 
 
 def current_version(field=None):
@@ -140,7 +150,7 @@ def _parse_args(args):
     args = args[:]
     command = args.pop(0)
     action = args.pop(0) if args else None
-    flags = {'-n': 'dry_run', '--debug': 'debug'}
+    flags = {'-n': 'dry_run', '-v': 'verbose', '--debug': 'debug'}
     flags = {k: f in args and bool(args.pop(args.index(f)))
         for f, k in flags.iteritems()}
     kw_idx = [(i, i + 1) for i, k in enumerate(args) if k.startswith('-')]
@@ -181,8 +191,14 @@ def _parse_args(args):
             usage = _usage.format(command=command, default_rule=default_rule,
                 default_origin=default_origin, default_branch=default_branch)
             if action in ('--help', 'help'):
+                formatted_branch_rules = str.join('\n',
+                    ('{0} -> rule={rule} source={source}'.format(k.rjust(16), **v)
+                    for k, v in sorted(branch_rules.iteritems())))
                 man = _man.format(command=command, description=__doc__,
-                    usage=usage, bold='\033[1m', under='\033[4m', reset='\033[0m')
+                    branch_rules=formatted_branch_rules, usage=usage,
+                    default_branch=default_branch, default_rule=default_rule,
+                    default_source=branch_rules[default_branch]['source'],
+                    bold='\033[1m', under='\033[4m', reset='\033[0m')
                 less = subprocess.Popen(['less', '-R'], stdin=subprocess.PIPE)
                 less.communicate(man)
             else:
@@ -195,13 +211,20 @@ def _parse_args(args):
 class Git(object):
     """Subprocess wrapper to call git commands using dot syntax."""
 
-    def __init__(self, check_output=True, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         self.args = ['git']
-        self.sh = subprocess.check_call
-        if check_output:
-            self.sh = lambda *a, **kw: subprocess.check_output(*a,
-                stderr=subprocess.STDOUT, **kw).strip()
         self.debug = kwargs.get('debug')
+        self.verbose = kwargs.get('verbose') or self.debug
+        self.sh = self._debug_output if self.verbose else self._check_output
+
+    def _check_output(self, *args, **kwargs):
+        return subprocess.check_output(
+            *args, stderr=subprocess.STDOUT, **kwargs).strip()
+
+    def _debug_output(self, *args, **kwargs):
+        print(str.join(' ', *args))
+        if not self.debug:
+            return subprocess.check_call(*args, **kwargs)
 
     def __getattr__(self, name):
         git = Git(**self.__dict__)
@@ -209,10 +232,6 @@ class Git(object):
         return git
 
     def __call__(self, *args):
-        if self.debug:
-            command = str.join(' ', self.args + list(args))
-            print command
-            return command
         return self.sh(self.args + list(args))
 
 git = Git()
