@@ -6,11 +6,10 @@ import subprocess
 
 
 _usage = """Usage:
-    {command} release [-r <rule>] [-n] [-o <origin>] [<destination> [<source>]]
-    {command} release-set <version> [-n] [-o <origin>] [<destination> [<source>]]
+    {command} release [-r <rule> | -s <version>] [-n] [-o <origin>] [<destination> [<source>]]
 
-    {command} hotfix [-r <rule>] [-n] [-o <origin>] [<branch>]
-    {command} hotfix-set <version> [-n] [-o <origin>] [<branch>]
+    {command} hotfix-start [-r <rule> | -s <version>] [-o <origin>] [<branch>]
+    {command} hotfix-finish [<version>] [-n] [-o <origin>] [<branch>]
 
 Safe commands:
     {command} bump [<rule>]     calculate next version using a rule (default: {default_rule})
@@ -47,7 +46,7 @@ _man = """
 
     Creating a new release consists in the following steps:
 
-        * create a new release branch from source branch
+        * create a intermediary release branch from source branch
         * merge this branch to destination branch
         * tag the merge with the new version
         * merge back the tag into the source branch
@@ -55,45 +54,50 @@ _man = """
     It is worth noting that the last two steps only occurr if the new version is
     different from the current version as returned by {command} {under}show path{reset}.
 
+    A hotfix works in similar fashion to a release, the difference being that
+    both source and destination branches are the same, and it stops middle way
+    to allow commits to be done in the intermediary branch.
+
 {bold}OPTIONS{reset}
 
-    {under}release{reset} [-n] [-r <rule>] [-o <origin>] [<destination> [<source>]]
+    {under}release{reset} [-n] [-r <rule> | -s <version>] [-o <origin>] [<destination> [<source>]]
         Create a new release from source to destination branch with version
-        calculated using a rule. The result will be pushed to origin, unless
-        the -n (dry-run) option is given.
+        calculated using a rule, or specified directly with the -s option. If
+        both options are given, the explicit set version takes precedence. The
+        version must match the "<major>.<minor>[.<patch>]" format, where each
+        field is an integer. The resulting merge will be pushed to origin
+        unless the -n (dry-run) option is given.
 
-    {under}release-set{reset} <version> [-n] [-o <origin>] [<destination> [<source>]]
-        Create a new release with version passed as parameter. The version must
-        match the "<major>.<minor>[.<patch>]" format, where each field is an
-        integer.
+    {under}hotfix-start{reset} [-r <rule> | -s <version>] [<branch>]
+        Create a new hotfix branch to work on, based on the specified branch.
+        By default the {bold}{hotfix_rule}{reset} rule will be used to set the hotfix version number
+        but a different rule can be specified with -r or a version can be set
+        directly with the -s option. If both are given, the set version takes
+        precedence.
+
+    {under}hotfix-finish{reset} [<version>] [-n] [-o <origin>]
+        Merge back and delete the hotfix branch for the given version.
 
 """
 
 
-def release(branch=None, source=None, origin=None, rule=None, *args, **kwargs):
+def release(branch=None, source=None, origin=None, version=None, rule=None,
+        dry_run=False, prefix='release/', *args, **kwargs):
     """
-    Perform a new release calculating the version number using a rule.
+    Perform a new release tagging with the given version or calculating the
+    version number using a rule.
     """
     origin = origin or default_origin
     branch = branch or default_branch
     source = source or branch_rules[branch]['source']
     rule = rule or branch_rules[branch]['rule']
-    version = next_version(rule, *args)
-    return release_set(version, branch, source, origin, *args, **kwargs)
-
-
-def release_set(version, branch=None, source=None, origin=None,
-        dry_run=False, prefix='release/', *args, **kwargs):
-    """
-    Perform a new release tagging with the given version.
-    """
-    origin = origin or default_origin
-    branch = branch or default_branch
-    source = source or branch_rules[branch]['source']
     git = Git(**kwargs)
     git.fetch(origin, branch, source)
-    git.merge('--ff-only', '--no-edit', source, '%s/%s' % (origin, source))
-    git.merge('--ff-only', '--no-edit', branch, '%s/%s' % (origin, branch))
+    git.checkout(source)
+    git.merge('--ff-only', source, '%s/%s' % (origin, source))
+    git.checkout(branch)
+    git.merge('--ff-only', branch, '%s/%s' % (origin, branch))
+    version = version or next_version(rule, *args)
     release_start(version, branch, source, origin, prefix, **kwargs)
     release_finish(version, branch, source, origin, prefix, **kwargs)
     if not dry_run:
@@ -109,6 +113,7 @@ def release_start(version, branch, source, origin, prefix, **kwargs):
     release_branch = prefix + version
     git.checkout(source)
     git.checkout('-b', release_branch)
+    return release_branch
 
 
 def release_finish(version, branch, source, origin, prefix, **kwargs):
@@ -127,9 +132,46 @@ def release_finish(version, branch, source, origin, prefix, **kwargs):
     git.merge('--no-ff', '--no-edit', release_branch)
     git.branch('-d', release_branch)
     if version != current_version('patch'):
-        git.tag('-a', version, '-m', '"Release %s"' % version)
+        git.tag('-a', version, '-m', 'Release %s' % version)
         git.checkout(source)
         git.merge('--no-ff', '--no-edit', version)
+    return version
+
+
+def hotfix(action=None, version=None, branch=None, origin=None, rule=None,
+        dry_run=False, prefix='hotfix/', *args, **kwargs):
+    origin = origin or default_origin
+    branch = branch or hotfix_branch
+    rule = rule or hotfix_rule
+    git = Git(**kwargs)
+    git.fetch(origin, branch)
+    git.checkout(branch)
+    git.merge('--ff-only', branch, '%s/%s' % (origin, branch))
+    version = version or next_version(rule, *args)
+    if action == 'start':
+        return hotfix_start(version, branch, origin, prefix, **kwargs)
+    elif action == 'finish':
+        hotfix_finish(version, branch, origin, prefix, **kwargs)
+        if not dry_run:
+            git.push(origin, branch, version)
+
+
+def hotfix_start(version, branch, origin, prefix, **kwargs):
+    git = Git(**kwargs)
+    hotfix_branch = prefix + version
+    git.checkout(branch)
+    git.checkout('-b', hotfix_branch)
+    return hotfix_branch
+
+
+def hotfix_finish(version, branch, origin, prefix, **kwargs):
+    git = Git(**kwargs)
+    hotfix_branch = prefix + version
+    git.checkout(branch)
+    git.merge('--no-ff', '--no-edit', hotfix_branch)
+    git.branch('-d', hotfix_branch)
+    git.tag('-a', version, '-m', 'Hotfix %s' % version)
+    return version
 
 
 def current_version(field=None):
@@ -169,17 +211,17 @@ def _parse_args(args):
     kwargs.update(flags)
     kwargs['rule'] = kwargs.get('-r')
     kwargs['origin'] = kwargs.get('-o')
+    kwargs['version'] = kwargs.get('-s')
     try:
-        if action == 'release':
-            print release(*option, **kwargs)
-        elif action == 'release-set':
-            try:
-                if _is_version(option[0]):
-                    print release_set(*option)
-                else:
-                    errors = 'fatal: Not a valid version'
-            except IndexError:
-                errors = 'fatal: Must specify a version'
+        if action in ('release', 'hotfix-start'):
+            if kwargs['version'] and not _is_version(kwargs['version']):
+                errors = 'fatal: Not a valid version'
+            elif action == 'release':
+                print release(*option, **kwargs)
+            elif action == 'hotfix-start':
+                print hotfix(action='start', *option, **kwargs)
+        elif action == 'hotfix-finish':
+            print hotfix(action='finish', *option, **kwargs)
         elif action == 'bump':
             print next_version(*option)
         elif action == 'info':
@@ -330,7 +372,9 @@ branch_rules = {
 default_origin = 'origin'
 default_branch = 'master'
 default_rule = branch_rules[default_branch]['rule']
+
 hotfix_rule = 'patch'
+hotfix_branch = 'master'
 
 
 if __name__ == '__main__':
