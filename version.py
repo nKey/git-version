@@ -45,6 +45,15 @@ _man = """
     (eg. {command} {under}release {default_branch}{reset}) and the options will assume the default
     values accordingly (same as {command} {under}release -r {default_rule} {default_branch} {default_source}{reset}).
 
+    Creating a new release consists in the following steps:
+
+        * create a new release branch from source branch
+        * merge this branch to destination branch
+        * tag the merge with the new version
+        * merge back the tag into the source branch
+
+    It is worth noting that the last two steps only occurr if the new version is
+    different from the current version as returned by {command} {under}show path{reset}.
 
 {bold}OPTIONS{reset}
 
@@ -181,8 +190,9 @@ def _parse_args(args):
             except IndexError:
                 errors = 'fatal: Must specify a rule'
         elif action == 'rules':
+            rule = branch_rules[option[0] if option else default_branch]['rule']
             print str.join('\n', sorted(
-                ('* ' + r if r == default_rule else '  ' + r for r in rules),
+                ('* ' + r if r == rule else '  ' + r for r in bump_rules),
                 key=lambda v: v.startswith('*') or v)
             )
         elif action == 'show':
