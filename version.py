@@ -14,7 +14,7 @@ _usage = """Usage:
 Safe commands:
     {command} bump [<rule>]     calculate next version using a rule (default: {default_rule})
     {command} info <rule>       show rule description
-    {command} rules             display list of rules
+    {command} rules [<branch>]  display list of rules, marking default for given branch
     {command} show [<field>]    display current version truncating at field (default: all)
 """
 
@@ -28,7 +28,7 @@ _man = """
 {bold}DESCRIPTION{reset}
     Use {command} release when you want to create a new versioned release from
     source to destination branch with the version number calculated using a
-    rule. The release-set command allows to manually set the version to be used.
+    rule. The release -s command allows to manually set the version to be used.
 
     A rule specifies a function used to change the version number in a certain
     way. The version format is "<major>.<minor>.<patch>" and a rule can operate
@@ -52,7 +52,7 @@ _man = """
         * merge back the tag into the source branch
 
     It is worth noting that the last two steps only occurr if the new version is
-    different from the current version as returned by {command} {under}show path{reset}.
+    different from the current version as returned by {command} {under}show build{reset}.
 
     A hotfix works in similar fashion to a release, the difference being that
     both source and destination branches are the same, and it stops middle way
@@ -64,9 +64,9 @@ _man = """
         Create a new release from source to destination branch with version
         calculated using a rule, or specified directly with the -s option. If
         both options are given, the explicit set version takes precedence. The
-        version must match the "<major>.<minor>[.<patch>]" format, where each
-        field is an integer. The resulting merge will be pushed to origin
-        unless the -n (dry-run) option is given.
+        version must match the "<major>.<minor>[.<patch>][.<build>]" format,
+        where eachfield is an integer. The resulting merge will be pushed to
+        origin unless the -n (dry-run) option is given.
 
     {under}hotfix-start{reset} [-r <rule> | -s <version>] [<branch>]
         Create a new hotfix branch to work on, based on the specified branch.
@@ -77,6 +77,12 @@ _man = """
 
     {under}hotfix-finish{reset} [<version>] [-n] [-o <origin>]
         Merge back and delete the hotfix branch for the given version.
+
+{bold}A NOTE ON BUILD NUMBER{reset}
+
+    You can optionally use a global counter in the last field of the version,
+    in the format "<major>.<minor>.<patch>.<build>". This build number always
+    gets incremented and is never reset when using any of the increment rules.
 
 """
 
@@ -131,7 +137,7 @@ def release_finish(version, branch, source, origin, prefix, **kwargs):
     git.checkout(branch)
     git.merge('--no-ff', '--no-edit', release_branch)
     git.branch('-d', release_branch)
-    if version != current_version('patch'):
+    if version != current_version('build'):
         git.tag('-a', version, '-m', 'Release %s' % version)
         git.checkout(source)
         git.merge('--no-ff', '--no-edit', version)
@@ -176,11 +182,13 @@ def hotfix_finish(version, branch, origin, prefix, **kwargs):
 
 def current_version(field=None):
     version = git.describe()
-    if field not in ('major', 'minor', 'patch'):
+    if field not in ('major', 'minor', 'patch', 'build'):
         return version
-    major, minor, patch = _major_minor_patch(version)
-    if field == 'patch':
-        return str.join('.', (major, minor, patch))
+    major, minor, patch, build = _major_minor_patch_build(version)
+    if field == 'build':
+        return str.join('.', (major, minor, patch or '0', build or '0'))
+    elif field == 'patch':
+        return str.join('.', (major, minor, patch or '0'))
     elif field == 'minor':
         return str.join('.', (major, minor))
     elif field == 'major':
@@ -232,11 +240,13 @@ def _parse_args(args):
             except IndexError:
                 errors = 'fatal: Must specify a rule'
         elif action == 'rules':
-            rule = branch_rules[option[0] if option else default_branch]['rule']
-            print str.join('\n', sorted(
-                ('* ' + r if r == rule else '  ' + r for r in bump_rules),
-                key=lambda v: v.startswith('*') or v)
-            )
+            try:
+                rule = branch_rules[option[0] if option else default_branch]['rule']
+                print str.join('\n', sorted(
+                    ('* ' + r if r == rule else '  ' + r for r in bump_rules),
+                    key=lambda v: v.startswith('*') or v))
+            except KeyError:
+                errors = 'fatal: No rule defined for given branch'
         elif action == 'show':
             print current_version(*option)
         else:
@@ -250,6 +260,7 @@ def _parse_args(args):
                     branch_rules=formatted_branch_rules, usage=usage,
                     default_branch=default_branch, default_rule=default_rule,
                     default_source=branch_rules[default_branch]['source'],
+                    hotfix_rule=hotfix_rule,
                     bold='\033[1m', under='\033[4m', reset='\033[0m')
                 less = subprocess.Popen(['less', '-R'], stdin=subprocess.PIPE)
                 less.communicate(man)
@@ -291,21 +302,22 @@ git = Git()
 
 # Versioning rules
 
-def _major_minor_patch(version):
+def _major_minor_patch_build(version):
     version, _, vcs = version.partition('-')
     major, _, minor = version.partition('.')
     minor, _, patch = minor.partition('.')
-    return major, minor, patch
+    patch, _, build = patch.partition('.')
+    return major, minor, patch, build
 
 
 def _is_version(version):
     if not '.' in version:
         return False
-    major, minor, patch = _major_minor_patch(version)
+    major, minor, patch, build = _major_minor_patch_build(version)
     if not major or not minor:
         return False
     try:
-        map(int, (major, minor, patch or 0))
+        map(int, (major, minor, patch or 0, build or 0))
     except ValueError:
         return False
     return True
@@ -315,36 +327,43 @@ def _is_version(version):
 
 def major_rule(version, *a, **kw):
     """Increments major number, resetting minor and patch numbers."""
-    major, minor, patch = _major_minor_patch(version)
+    major, minor, patch, build = _major_minor_patch_build(version)
     major = str(int(major) + 1)
     minor = patch = '0'
+    if build:
+        patch += '.' + str(int(build) + 1)
     return str.join('.', (major, minor, patch))
 
 
 def minor_rule(version, *a, **kw):
     """Increments minor number, keeping major and resetting patch number."""
-    major, minor, patch = _major_minor_patch(version)
+    major, minor, patch, build = _major_minor_patch_build(version)
     minor = str(int(minor) + 1)
     patch = '0'
+    if build:
+        patch += '.' + str(int(build) + 1)
     return str.join('.', (major, minor, patch))
 
 
 def patch_rule(version, *a, **kw):
     """Increments patch number, keeping major and minor numbers."""
-    major, minor, patch = _major_minor_patch(version)
+    major, minor, patch, build = _major_minor_patch_build(version)
     try:
         patch = str(int(patch) + 1) if patch else '0'
     except ValueError:
         patch = '0'
+    if build:
+        patch += '.' + str(int(build) + 1)
     return str.join('.', (major, minor, patch))
 
 
 def build_rule(version, build=None, *a, **kw):
-    """Set patch number to `build` argument, keeping major and minor number."""
+    """Set build number to `build` argument, keeping the other numbers."""
+    major, minor, patch, old_build = _major_minor_patch_build(version)
+    patch = patch or '0'
     if not build:
-        return patch_rule(version)
-    major, minor, patch = _major_minor_patch(version)
-    return str.join('.', (major, minor, build))
+        build = str(int(old_build) + 1) if old_build else '0'
+    return str.join('.', (major, minor, patch, build))
 
 
 def keep_rule(version, *a, **kw):
@@ -352,7 +371,9 @@ def keep_rule(version, *a, **kw):
     Keep the same version without changes.
     Use of this rule prevents a backmerge from occurring.
     """
-    major, minor, patch = _major_minor_patch(version)
+    major, minor, patch, build = _major_minor_patch_build(version)
+    if build:
+        patch += '.' + build
     return str.join('.', (major, minor, patch))
 
 
