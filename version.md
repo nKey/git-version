@@ -11,6 +11,21 @@ Increments version number based on git tags.
 * When ready, run `version release` to create a new release from the develop to the master branch, pushing the changes to origin.
 
 
+## Workflow
+
+![version workflow git graph](version-flow.png)
+
+The initial version must be provided in the repository *master* branch before using the version script. Its format defines how the next versions are calculated:
+
+ * 2 digits (`major.minor`) will produce a 3 digit version next
+ * 3 digits (`major.minor.patch`) will continue the 3 digit scheme
+ * 4 digits (`major.minor.patch.build`) will use the last field to keep a global counter of releases
+
+Using the `release` command will merge the current *develop* into *master*, tagging it with the next patch version number and merging that tag back to *develop*.
+
+The `hotfix-start` command creates a temporary branch from *master* where commits can be made and `hotfix-finish` will merge those changes back to *master* and tag it with the next patch version number. Hotfix commits can be manually merged into *develop* if needed.
+
+
 ## Jenkins Configuration
 
 ### Dependencies
