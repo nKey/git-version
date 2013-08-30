@@ -207,7 +207,7 @@ def next_version(rule=None, *args):
 
 def _parse_args(args):
     args = args[:]
-    command = args.pop(0)
+    command = args.pop(0).rpartition('/')[-1]
     action = args.pop(0) if args else None
     flags = {'-n': 'dry_run', '-v': 'verbose', '--debug': 'debug'}
     flags = {k: f in args and bool(args.pop(args.index(f)))
