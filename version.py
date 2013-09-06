@@ -101,9 +101,9 @@ def release(branch=None, source=None, origin=None, version=None, rule=None,
     git.fetch(origin, branch, source)
     git.checkout(source)
     git.merge('--ff-only', source, '%s/%s' % (origin, source))
+    version = version or next_version(rule, *args)
     git.checkout(branch)
     git.merge('--ff-only', branch, '%s/%s' % (origin, branch))
-    version = version or next_version(rule, *args)
     release_start(version, branch, source, origin, prefix, **kwargs)
     release_finish(version, branch, source, origin, prefix, **kwargs)
     if not dry_run:
