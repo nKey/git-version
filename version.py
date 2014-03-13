@@ -101,7 +101,7 @@ def release(branch=None, source=None, origin=None, version=None, rule=None,
     git.fetch(origin, branch, source)
     git.checkout(source)
     git.merge('--ff-only', source, '%s/%s' % (origin, source))
-    version = version or next_version(rule, *args)
+    version = version or next_version(rule, *args, **kwargs)
     git.checkout(branch)
     git.merge('--ff-only', branch, '%s/%s' % (origin, branch))
     release_start(version, branch, source, origin, prefix, **kwargs)
@@ -153,7 +153,7 @@ def hotfix(action=None, version=None, branch=None, origin=None, rule=None,
     git.fetch(origin, branch)
     git.checkout(branch)
     git.merge('--ff-only', branch, '%s/%s' % (origin, branch))
-    version = version or next_version(rule, *args)
+    version = version or next_version(rule, *args, **kwargs)
     if action == 'start':
         return hotfix_start(version, branch, origin, prefix, **kwargs)
     elif action == 'finish':
@@ -180,7 +180,8 @@ def hotfix_finish(version, branch, origin, prefix, **kwargs):
     return version
 
 
-def current_version(field=None):
+def current_version(field=None, **kwargs):
+    git = Git(**kwargs)
     version = git.describe()
     if field not in ('major', 'minor', 'patch', 'build'):
         return version
@@ -195,12 +196,13 @@ def current_version(field=None):
         return major
 
 
-def current_branch():
+def current_branch(**kwargs):
+    git = Git(**kwargs)
     return git.rev_parse('--abbrev-ref', 'HEAD')
 
 
-def next_version(rule=None, *args):
-    version = current_version()
+def next_version(rule=None, *args, **kwargs):
+    version = current_version(field=None, **kwargs)
     rule = rule or default_rule
     return bump_rules[rule](version, *args)
 
@@ -274,10 +276,13 @@ def _parse_args(args):
 class Git(object):
     """Subprocess wrapper to call git commands using dot syntax."""
 
+    safe_commands = {'describe', 'checkout'}
+
     def __init__(self, *args, **kwargs):
         self.args = ['git']
         self.debug = kwargs.get('debug')
         self.verbose = kwargs.get('verbose') or self.debug
+        self.safe_call = False
         self.sh = self._debug_output if self.verbose else self._check_output
 
     def _check_output(self, *args, **kwargs):
@@ -286,6 +291,9 @@ class Git(object):
 
     def _debug_output(self, *args, **kwargs):
         print(str.join(' ', *args))
+        if self.safe_call:
+            self.safe_call = False
+            return self._check_output(*args, **kwargs)
         if not self.debug:
             return subprocess.check_call(*args, **kwargs)
 
@@ -295,9 +303,9 @@ class Git(object):
         return git
 
     def __call__(self, *args):
+        self.safe_call = self.args[1] in self.safe_commands
+        self.safe_call = self.safe_call and '-b' not in args
         return self.sh(self.args + list(args))
-
-git = Git()
 
 
 # Versioning rules
