@@ -96,12 +96,12 @@ def release(branch=None, source=None, origin=None, version=None, rule=None,
     origin = origin or default_origin
     branch = branch or default_branch
     source = source or branch_rules[branch]['source']
-    rule = rule or branch_rules[branch]['rule']
+    get_rule = lambda: rule or branch_rules[branch]['rule']
     git = Git(**kwargs)
     git.fetch(origin, branch, source)
     git.checkout(source)
     git.merge('--ff-only', source, '%s/%s' % (origin, source))
-    version = version or next_version(rule, *args, **kwargs)
+    version = version or next_version(get_rule(), *args, **kwargs)
     git.checkout(branch)
     git.merge('--ff-only', branch, '%s/%s' % (origin, branch))
     release_start(version, branch, source, origin, prefix, **kwargs)
