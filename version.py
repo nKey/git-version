@@ -6,16 +6,20 @@ import subprocess
 
 
 _usage = """Usage:
-    {command} release [-r <rule> | -s <version>] [-n] [-o <origin>] [<destination> [<source>]]
+    {command} release [-r <rule> | -s <version>] [-o <origin>] [<destination> [<source>]]
 
     {command} hotfix-start [-r <rule> | -s <version>] [-o <origin>] [<branch>]
-    {command} hotfix-finish [<version>] [-n] [-o <origin>] [<branch>]
+    {command} hotfix-finish [-r <rule> | -s <version>] [-o <origin>] [<branch>]
 
 Safe commands:
     {command} bump [<rule>]     calculate next version using a rule (default: {default_rule})
     {command} info <rule>       show rule description
     {command} rules [<branch>]  display list of rules, marking default for given branch
     {command} show [<field>]    display current version truncating at field (default: all)
+
+Global options:
+    -v      verbose output    show git commands execution
+    -n      dry run           don't push changes to remote
 """
 
 _man = """
@@ -75,7 +79,7 @@ _man = """
         directly with the -s option. If both are given, the set version takes
         precedence.
 
-    {under}hotfix-finish{reset} [<version>] [-n] [-o <origin>]
+    {under}hotfix-finish{reset} [-r <rule> | -s <version>] [-n] [-o <origin>] [<branch>]
         Merge back and delete the hotfix branch for the given version.
 
 {bold}A NOTE ON BUILD NUMBER{reset}
@@ -144,7 +148,7 @@ def release_finish(version, branch, source, origin, prefix, **kwargs):
     return version
 
 
-def hotfix(action=None, version=None, branch=None, origin=None, rule=None,
+def hotfix(branch=None, origin=None, version=None, action=None, rule=None,
         dry_run=False, prefix='hotfix/', *args, **kwargs):
     origin = origin or default_origin
     branch = branch or hotfix_branch
