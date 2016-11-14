@@ -11,6 +11,8 @@ _usage = """Usage:
     {command} hotfix-start [-r <rule> | -s <version>] [-o <origin>] [<branch>]
     {command} hotfix-finish [-r <rule> | -s <version>] [-o <origin>] [<branch>]
 
+    {command} init [-r <rule>] [<destination>]
+
 Safe commands:
     {command} bump [<rule>]     calculate next version using a rule (default: {default_rule})
     {command} info <rule>       show rule description
@@ -89,6 +91,36 @@ _man = """
     gets incremented and is never reset when using any of the increment rules.
 
 """
+
+
+def init(branch=None, origin=None, rule=None, dry_run=False, *args, **kwargs):
+    """
+    Initialize the repository tag according to rule.
+    Will attempt to create the destination branch if it does not exist.
+    """
+    origin = origin or default_origin
+    branch = branch or default_branch
+    rule = rule or default_init
+    git = Git(**kwargs)
+    try:
+        return current_version()
+    except subprocess.CalledProcessError:
+        pass
+    try:
+        initial_commit = git.rev_list('--max-parents=0', '--all')
+    except subprocess.CalledProcessError:
+        git.checkout('-b', branch)
+        git.commit('--allow-empty', '-m', 'Initial commit')
+    initial_commit = git.rev_list('--max-parents=0', '--all')
+    try:
+        git.rev_parse('--verify', branch)
+    except subprocess.CalledProcessError:
+        git.branch(branch, initial_commit)
+    version = initial_version(rule, *args, **kwargs)
+    git.tag('-a', version, '-m', 'Initial commit', initial_commit)
+    if not dry_run and git.remote():
+        git.push(origin, branch, version)
+    return version
 
 
 def release(branch=None, source=None, origin=None, version=None, rule=None,
@@ -184,6 +216,12 @@ def hotfix_finish(version, branch, origin, prefix, **kwargs):
     return version
 
 
+def initial_version(rule=None, *args, **kwargs):
+    rules = ('major', 'minor', 'patch', 'build')
+    index = rules.index(rule) + 1 if rule in rules else len(rules)
+    return '.'.join('0' * max(2, index))
+
+
 def current_version(field=None, **kwargs):
     git = Git(**kwargs)
     version = git.describe()
@@ -227,7 +265,9 @@ def _parse_args(args):
     kwargs['origin'] = kwargs.get('-o')
     kwargs['version'] = kwargs.get('-s')
     try:
-        if action in ('release', 'hotfix-start'):
+        if action == 'init':
+            print init(*option, **kwargs)
+        elif action in ('release', 'hotfix-start'):
             if kwargs['version'] and not _is_version(kwargs['version']):
                 errors = 'fatal: Not a valid version'
             elif action == 'release':
@@ -405,6 +445,7 @@ branch_rules = {
 default_origin = 'origin'
 default_branch = 'master'
 default_rule = branch_rules[default_branch]['rule']
+default_init = 'build'
 
 hotfix_rule = 'patch'
 hotfix_branch = 'master'
