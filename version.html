@@ -1,9 +1,14 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
+
 <head>
+
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-<style>
+<title>version</title>
+
+
+<style type="text/css">
 html { font-size: 100%; overflow-y: scroll; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
 
 body{
@@ -99,8 +104,18 @@ dd { margin: 0 0 0 2em; }
 
 img { border: 0; -ms-interpolation-mode: bicubic; vertical-align: middle; }
 
-table { border-collapse: collapse; border-spacing: 0; }
-td { vertical-align: top; }
+table {
+  display:block;
+  overflow:auto;
+  width:100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  padding: 0;
+}
+table th { font-weight:700; }
+table th, table td { border: 1px solid #ddd; padding: 6px 13px; vertical-align: top;}
+table tr { background-color: #fff; border-top: 1px solid #ccc; }
+table tr:nth-child(2n) { background-color: #f8f8f8; }
 
 @media only screen and (min-width: 480px) {
 body{font-size:14px;}
@@ -127,29 +142,51 @@ body{font-size:16px;}
   h2, h3 { page-break-after: avoid; }
 }
 </style>
-<title>Version Control</title>
+
 
 </head>
+
 <body>
-<h1>Version Control</h1>
+
+<h1 id="toc_0">Version Control</h1>
 
 <p>Increments version number based on git tags.</p>
 
-<h2>Git Project Setup</h2>
+<h2 id="toc_1">Git Project Setup</h2>
 
-<ul>
-<li>Install the <code>version.py</code> file to your develop and build machines. <br /><code>cp version.py /usr/local/bin/version</code></li>
-<li>Run <code>version</code> and read the command line usage help.</li>
-<li>Hack your code, commiting on the develop branch as normal.</li>
-<li>When ready, run <code>version release</code> to create a new release from the develop to the master branch, pushing the changes to origin.</li>
-</ul>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Instructions</th>
+</tr>
+</thead>
 
+<tbody>
+<tr>
+<td><code>cp version.py /usr/local/bin/version</code></td>
+<td>Install the script on the developer and build machines.</td>
+</tr>
+<tr>
+<td><code>git init &amp;&amp; version init</code></td>
+<td>Init the repo and create the first tag.</td>
+</tr>
+<tr>
+<td><code>git checkout -b develop</code></td>
+<td>Start commiting code on the develop branch.</td>
+</tr>
+<tr>
+<td><code>version release</code></td>
+<td>Create a new release from the develop to the master branch, pushing the changes to origin.</td>
+</tr>
+</tbody>
+</table>
 
-<h2>Workflow</h2>
+<h2 id="toc_2">Workflow</h2>
 
-<p><img src="version-flow.png" alt="version workflow git graph" /></p>
+<p><img src="version-flow.png" alt="version workflow git graph"></p>
 
-<p>The initial version must be provided in the repository <em>master</em> branch before using the version script. Its format defines how the next versions are calculated:</p>
+<p>The initial version must be provided in the repository <em>master</em> branch for the current version to be extracted. Its format defines how the next versions are calculated:</p>
 
 <ul>
 <li>2 digits (<code>major.minor</code>) will produce a 3 digit version next</li>
@@ -157,22 +194,22 @@ body{font-size:16px;}
 <li>4 digits (<code>major.minor.patch.build</code>) will use the last field to keep a global counter of releases</li>
 </ul>
 
+<p><code>version init</code> will setup this for you using the 4 digits format by default.</p>
 
 <p>Using the <code>release</code> command will merge the current <em>develop</em> into <em>master</em>, tagging it with the next patch version number and merging that tag back to <em>develop</em>.</p>
 
 <p>The <code>hotfix-start</code> command creates a temporary branch from <em>master</em> where commits can be made and <code>hotfix-finish</code> will merge those changes back to <em>master</em> and tag it with the next patch version number. Hotfix commits can be manually merged into <em>develop</em> if needed.</p>
 
-<h2>Jenkins Configuration</h2>
+<h2 id="toc_3">Jenkins Configuration</h2>
 
-<h3>Dependencies</h3>
+<h3 id="toc_4">Dependencies</h3>
 
 <ul>
 <li><a href="https://wiki.jenkins-ci.org/display/JENKINS/Git+Plugin">Git Plugin</a></li>
 <li><a href="https://wiki.jenkins-ci.org/display/JENKINS/EnvInject+Plugin">EnvInject Plugin</a></li>
 </ul>
 
-
-<h3>Source code management:</h3>
+<h3 id="toc_5">Source code management:</h3>
 
 <p>Configure your git repository URL and branch to build, then click advanced and set:</p>
 
@@ -181,17 +218,20 @@ body{font-size:16px;}
 <li>Use shallow clone: false</li>
 </ul>
 
+<p>Otherwise you&#39;ll get the wrong version number.</p>
 
-<p>Otherwise you'll get the wrong version number.</p>
-
-<h3>Build steps:</h3>
+<h3 id="toc_6">Build steps:</h3>
 
 <ul>
-<li>Execute shell: <br /><code>echo CURRENT_VERSION=$(python "/usr/local/bin/version.py" show) &gt; envvars</code></li>
+<li>Execute shell: <br /><code>echo CURRENT_VERSION=$(python &quot;/usr/local/bin/version&quot; show) &gt; envvars</code></li>
 <li>Inject environment variables - Properties File Path: <code>envvars</code></li>
 </ul>
 
-
 <p>The <code>CURRENT_VERSION</code> variable will then be available to use in your build environment, containing the version obtained from the most recent git tag.</p>
+
+
+
+
 </body>
+
 </html>
