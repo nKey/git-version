@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 """Version control using git tags."""
 
@@ -246,7 +246,15 @@ def current_branch(**kwargs):
 def next_version(rule=None, *args, **kwargs):
     version = current_version(field=None, **kwargs)
     rule = rule or default_rule
-    return bump_rules[rule](version, *args)
+    return bump_rules[rule](version, *args, build=_global_build(**kwargs))
+
+
+def _global_build(**kwargs):
+    git = Git(**kwargs)
+    tags = git.tag('-l', '*.*.*.*')
+    if not tags:
+        return None
+    return str(max(int(t.split('.')[3]) for t in tags.split()))
 
 
 def _parse_args(args):
@@ -383,7 +391,7 @@ def major_rule(version, *a, **kw):
     major = str(int(major) + 1)
     minor = patch = '0'
     if build:
-        patch += '.' + str(int(build) + 1)
+        patch += '.' + str(int(kw.get('build', build)) + 1)
     return str.join('.', (major, minor, patch))
 
 
@@ -393,7 +401,7 @@ def minor_rule(version, *a, **kw):
     minor = str(int(minor) + 1)
     patch = '0'
     if build:
-        patch += '.' + str(int(build) + 1)
+        patch += '.' + str(int(kw.get('build', build)) + 1)
     return str.join('.', (major, minor, patch))
 
 
@@ -405,16 +413,15 @@ def patch_rule(version, *a, **kw):
     except ValueError:
         patch = '0'
     if build:
-        patch += '.' + str(int(build) + 1)
+        patch += '.' + str(int(kw.get('build', build)) + 1)
     return str.join('.', (major, minor, patch))
 
 
-def build_rule(version, build=None, *a, **kw):
+def build_rule(version, *a, **kw):
     """Set build number to `build` argument, keeping the other numbers."""
-    major, minor, patch, old_build = _major_minor_patch_build(version)
+    major, minor, patch, build = _major_minor_patch_build(version)
     patch = patch or '0'
-    if not build:
-        build = str(int(old_build) + 1) if old_build else '0'
+    build = str(int(kw.get('build', build)) + 1) if build else '0'
     return str.join('.', (major, minor, patch, build))
 
 
