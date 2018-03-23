@@ -328,7 +328,7 @@ def _parse_args(args):
 class Git(object):
     """Subprocess wrapper to call git commands using dot syntax."""
 
-    safe_commands = {'describe', 'checkout'}
+    safe_commands = {'describe', 'checkout', 'tag'}
 
     def __init__(self, *args, **kwargs):
         self.args = ['git']
