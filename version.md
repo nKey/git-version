@@ -2,6 +2,11 @@
 
 Increments version number based on git tags.
 
+## Setup
+
+Install the script on the developer and build machines.
+
+  `curl -o /usr/local/bin/version https://raw.githubusercontent.com/nKey/git-version/master/version.py && chmod +x  /usr/local/bin/version`
 
 ## Git Project Setup
 
@@ -11,13 +16,6 @@ Command                                 | Instructions
 `git init && version init`              | Init the repo and create the first tag.
 `git checkout -b develop`               | Start commiting code on the develop branch.
 `version release`                       | Create a new release from the develop to the master branch, pushing the changes to origin.
-
-
-## Setup
-
-Run command to install version
-
-`curl -o /usr/local/bin/version https://raw.githubusercontent.com/nKey/git-version/master/version.py && chmod +x /usr/local/bin/version`
 
 
 ## Workflow
