@@ -13,6 +13,13 @@ Command                                 | Instructions
 `version release`                       | Create a new release from the develop to the master branch, pushing the changes to origin.
 
 
+## Setup
+
+Run command to install version
+
+`curl -o /usr/local/bin/version https://raw.githubusercontent.com/nKey/git-version/master/version.py && chmod +x /usr/local/bin/version`
+
+
 ## Workflow
 
 ![version workflow git graph](version-flow.png)
