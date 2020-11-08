@@ -503,9 +503,10 @@ default_init = "build"
 hotfix_rule = "patch"
 hotfix_branch = "master"
 
-
-if __name__ == "__main__":
+def main():
     import sys
-
     errors = _parse_args(sys.argv)
     sys.exit(errors)
+
+if __name__ == "__main__":
+    main()
